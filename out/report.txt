@@ -1,0 +1,7 @@
+Run: 2024-09
+Stations used: 32
+OI params: eps=1.0 L=50000.0 pobs_d=0.3 max_points=30
+LOOCV: MAE=242.725 RMSE=667.323
+Obs min/max: 13.000 / 108.500
+PredCV min/max: 0.000 / 2892.258
+Background min/max: 0.000 / 77.246
