@@ -1,7 +1,0 @@
-Run: 2013-01
-Stations used: 11
-OI params: eps=1.0 L=50000.0 pobs_d=0.3 max_points=30
-LOOCV: MAE=99.616 RMSE=160.898
-Obs min/max: 28.500 / 73.300
-PredCV min/max: 3.886 / 480.894
-Background min/max: 0.000 / 903.481

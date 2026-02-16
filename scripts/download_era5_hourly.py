@@ -11,7 +11,7 @@ def parse_args():
     p.add_argument("--month", type=int, required=True)
     p.add_argument("--out", required=True, help="Output netcdf path, e.g. data/era5/era5_tp_hourly_2025_09.nc")
     # Latvia bbox (north, west, south, east)
-    p.add_argument("--north", type=float, default=58.2)
+    p.add_argument("--north", type=float, default=58.5)
     p.add_argument("--west", type=float, default=20.5)
     p.add_argument("--south", type=float, default=55.5)
     p.add_argument("--east", type=float, default=28.5)

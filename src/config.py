@@ -13,9 +13,9 @@ class RunConfig:
 
     # OI params (start values)
     eps: float = 1.0          # mm, stabilizer for log
-    L: float = 50000.0        # m, horizontal decorrelation length
+    L: float = 40000.0        # m, horizontal decorrelation length
     pobs_d: float = 0.3       # (dimensionless) obs error ratio in d-space
-    max_points: int = 30
+    max_points: int = 33
     cv_radius_m: float = 2000.0
 
     omp_threads: int = 4
