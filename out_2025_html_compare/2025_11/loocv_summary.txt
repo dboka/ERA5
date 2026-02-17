@@ -1,0 +1,11 @@
+Run: 2025-11
+Stations used: 25
+
+GridPP log-ratio OI LOOCV:
+  MAE=8.728 RMSE=12.984 BIAS=-2.235
+
+UK (drift+OK residuals) LOOCV:
+  MAE=13.379 RMSE=17.541 BIAS=0.063
+
+UK params: range_m=41500.0 nugget=0.0
+Drift: 1, x, y, x^2, y^2, x*y, cont_pr, elev

@@ -5,6 +5,7 @@ import argparse
 import os
 import numpy as np
 import gridpp
+import pandas as pd
 
 from config import Paths, RunConfig
 from io_data import read_grid_csv, read_stations_csv
@@ -14,6 +15,7 @@ from plots import ensure_dir, save_field_png, save_text
 from export import write_geotiff_lks92
 from background_era5_total import load_era5_monthly_total_mm_to_lvgrid
 from interp_xy import bilinear_sample_regular_xy
+
 
 
 def parse_args(defaults: RunConfig) -> argparse.Namespace:
@@ -34,6 +36,12 @@ def parse_args(defaults: RunConfig) -> argparse.Namespace:
 
     p.add_argument("--cv_radius", type=float, default=defaults.cv_radius_m)
     p.add_argument("--threads", type=int, default=defaults.omp_threads)
+
+    p.add_argument("--stations_meta_csv", default=None, help="Stations meta CSV with cont_pr + elevation (optional). If set, filters stations to those with meta.")
+    p.add_argument("--meta_id_col", default="gh_id")
+    p.add_argument("--meta_cont_col", default="cont_pr")
+    p.add_argument("--meta_h_col", default="elevation")
+    p.add_argument("--meta_h_col_alt", default="ELEVATION")
 
     return p.parse_args()
 
@@ -78,6 +86,40 @@ def main():
     if "gh_id" in sub.columns:
         sub = sub.sort_values("gh_id")
 
+        # Optional: filter stations by meta availability (to match compare_loocv.py station set)
+        # Optional: filter stations by meta availability (to match compare_loocv.py station set)
+    if args.stations_meta_csv:
+        meta = pd.read_csv(args.stations_meta_csv, sep=";", decimal=".", encoding="utf-8", low_memory=False)
+        meta.columns = [c.strip().replace("\ufeff", "") for c in meta.columns]
+
+        if args.meta_id_col not in meta.columns:
+            raise ValueError(f"meta_id_col not found in meta csv: {args.meta_id_col}")
+        if args.meta_cont_col not in meta.columns:
+            raise ValueError(f"meta_cont_col not found in meta csv: {args.meta_cont_col}")
+
+        # pick elevation column
+        hcol = args.meta_h_col if args.meta_h_col in meta.columns else None
+        if hcol is None and args.meta_h_col_alt in meta.columns:
+            hcol = args.meta_h_col_alt
+        if hcol is None:
+            raise ValueError(
+                f"Could not find elevation column in meta. Tried: {args.meta_h_col}, {args.meta_h_col_alt}"
+            )
+
+        meta_small = meta[[args.meta_id_col, args.meta_cont_col, hcol]].copy()
+        meta_small = meta_small.rename(
+            columns={args.meta_id_col: "gh_id", args.meta_cont_col: "cont_pr", hcol: "elev"}
+        )
+
+        before = len(sub)
+        sub = sub.merge(meta_small, how="left", on="gh_id")
+        sub = sub.dropna(subset=["cont_pr", "elev"]).copy()
+        after = len(sub)
+        print(f"[meta filter] stations before={before} after={after} (require cont_pr+elev)")
+
+        
+
+
     points, obs, px, py = build_points_cartesian(sub)
 
     # Drop stations outside grid bbox
@@ -92,9 +134,6 @@ def main():
         raise RuntimeError("Too few stations after bbox filter.")
 
     obs = np.asarray(obs, dtype=np.float32)
-    obs_max = float(np.nanmax(obs))
-    vmin_scale = 0.0
-    vmax_scale = obs_max + 10.0
 
     # 3) background to LV grid
     if not os.path.exists(args.era_nc):
@@ -110,18 +149,13 @@ def main():
         print("[background] looks like meters -> converting to mm (×1000)")
         background *= 1000.0
 
-    # plot background (SAME SCALE AS ANALYSIS)
+    # plot background (maskots ar NaN)
     background_plot = background.copy()
     background_plot[~griddata.mask] = np.nan
     save_field_png(
         background_plot,
         f"Background (ERA5) {cfg.year}-{cfg.month:02d}",
         os.path.join(paths.out_dir, "01_background.png"),
-        mask=None,
-        scale="obs",
-        obs_max=obs_max,
-        pad_mm=10.0,
-        interpolation="nearest",
     )
 
     # OI needs background everywhere -> fill outside mask with interior mean
@@ -144,7 +178,7 @@ def main():
         points=points,
         obs=obs,
         background_filled=bg_for_oi,
-        bg_at_stations=bg_at_stations,   # <-- consistent now
+        bg_at_stations=bg_at_stations,
         mask=griddata.mask,
         eps=cfg.eps,
         L=cfg.L,
@@ -164,39 +198,25 @@ def main():
         cv_radius_m=cfg.cv_radius_m,
     )
 
-    # 6) plots
-    analysis_plot2 = analysis.copy()
-    analysis_plot2[~griddata.mask] = np.nan
+    imax = int(np.nanargmax(obs))
+    print("[MAX OBS station]")
+    print("  obs:", float(obs[imax]))
+    print("  pred_cv:", float(pred_cv[imax]))
+    print("  bg_at_station:", float(bg_at_stations[imax]))
+    print("  d_obs:", float(np.log(obs[imax] + cfg.eps) - np.log(bg_at_stations[imax] + cfg.eps)))
 
-    background_plot2 = background.copy()
-    background_plot2[~griddata.mask] = np.nan
-
-    correction_plot = (analysis_plot2 - background_plot2).astype(np.float32)
+    # 6) Save outputs  (KĀ TU PRASĪJI)
+    correction_plot = (analysis_plot - background_plot).astype(np.float32)
 
     save_field_png(
-        analysis_plot2,
+        analysis_plot,
         f"Analysis (log-ratio OI) {cfg.year}-{cfg.month:02d}",
         os.path.join(paths.out_dir, "02_analysis.png"),
-        mask=None,
-        scale="obs",
-        obs_max=obs_max,
-        pad_mm=10.0,
-        interpolation="nearest",
     )
-
-    # correction: symmetric around 0
-    finite_corr = correction_plot[np.isfinite(correction_plot)]
-    corr_abs = float(np.nanmax(np.abs(finite_corr))) if finite_corr.size else 1.0
-
     save_field_png(
         correction_plot,
         "Correction (analysis - background)",
         os.path.join(paths.out_dir, "03_correction.png"),
-        mask=None,
-        scale="obs",
-        obs_max=obs_max,
-        interpolation="nearest",
-        
     )
 
     # GeoTIFF export
@@ -216,11 +236,10 @@ def main():
     report.append(f"ERA5 file: {args.era_nc}")
     report.append(f"OI params: eps={cfg.eps} L={cfg.L} pobs_d={cfg.pobs_d} max_points={cfg.max_points}")
     report.append(f"CV radius (m): {cfg.cv_radius_m}")
-    report.append(f"CV: MAE={mae:.3f} RMSE={rmse:.3f}")
+    report.append(f"LOOCV/CV: MAE={mae:.3f} RMSE={rmse:.3f}")
     report.append(f"Obs min/max: {float(np.nanmin(obs)):.3f} / {float(np.nanmax(obs)):.3f}")
-    report.append(f"Plot scale: vmin={vmin_scale:.1f} vmax={vmax_scale:.1f} (0..obs_max+10)")
     report.append(f"PredCV min/max: {float(np.nanmin(pred_cv)):.3f} / {float(np.nanmax(pred_cv)):.3f}")
-    report.append(f"Background min/max: {float(np.nanmin(background_plot2)):.3f} / {float(np.nanmax(background_plot2)):.3f}")
+    report.append(f"Background min/max: {float(np.nanmin(background)):.3f} / {float(np.nanmax(background)):.3f}")
 
     report_text = "\n".join(report)
     print(report_text)

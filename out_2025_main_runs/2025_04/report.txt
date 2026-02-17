@@ -1,0 +1,9 @@
+Run: 2025-04
+Stations used: 32
+ERA5 file: /home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/data/era5/era5_tp_mm_month_2025_04.nc
+OI params: eps=1.0 L=41500.0 pobs_d=0.1 max_points=29
+CV radius (m): 2000.0
+LOOCV/CV: MAE=12.811 RMSE=17.799
+Obs min/max: 8.600 / 110.500
+PredCV min/max: 7.820 / 104.688
+Background min/max: 0.000 / 68.534

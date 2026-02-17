@@ -1,0 +1,13 @@
+year,month,stations,gridpp_mae,gridpp_rmse,gridpp_bias,uk_mae,uk_rmse,uk_bias,out_dir
+2025,1,25,23.897,28.092,-3.866,17.899,22.793,0.571,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare/2025_01
+2025,2,25,5.624,7.705,0.255,3.753,5.243,-0.141,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare/2025_02
+2025,3,25,6.170,7.480,-0.313,6.328,7.893,-0.213,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare/2025_03
+2025,4,25,11.148,15.393,-2.542,10.128,13.950,0.551,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare/2025_04
+2025,5,25,19.095,26.282,-2.084,17.193,23.331,0.601,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare/2025_05
+2025,6,24,15.004,19.843,-5.035,12.210,15.278,0.475,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare/2025_06
+2025,7,25,27.354,33.193,0.814,21.798,31.434,-0.602,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare/2025_07
+2025,8,25,19.510,24.390,-1.156,29.617,35.007,-0.641,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare/2025_08
+2025,9,25,11.671,14.905,-2.475,12.970,15.514,-0.209,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare/2025_09
+2025,10,25,10.769,14.932,-5.344,11.748,15.090,-0.414,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare/2025_10
+2025,11,25,8.728,12.984,-2.235,13.379,17.541,0.063,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare/2025_11
+2025,12,25,8.629,10.682,-1.837,7.320,9.260,0.214,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare/2025_12

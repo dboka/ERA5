@@ -29,7 +29,7 @@ def save_field_png(
     figsize=(7, 4),
     dpi: int = 150,
     interpolation: str = "nearest",
-    scale: ScaleMode = "obs",
+    scale: ScaleMode = "minmax",   # <-- CHANGE HERE
     vmin: Optional[float] = None,
     vmax: Optional[float] = None,
     obs_max: Optional[float] = None,

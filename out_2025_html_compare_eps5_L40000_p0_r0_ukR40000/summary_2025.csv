@@ -1,0 +1,13 @@
+year,month,stations,gridpp_mae,gridpp_rmse,gridpp_bias,uk_mae,uk_rmse,uk_bias,out_dir
+2025,1,25,23.352,27.443,2.296,17.937,22.811,0.577,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare_eps5_L40000_p0_r0_ukR40000/2025_01
+2025,2,25,5.741,7.708,1.410,3.751,5.242,-0.141,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare_eps5_L40000_p0_r0_ukR40000/2025_02
+2025,3,25,6.236,7.530,1.407,6.341,7.910,-0.216,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare_eps5_L40000_p0_r0_ukR40000/2025_03
+2025,4,25,10.757,14.864,0.453,10.128,13.948,0.551,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare_eps5_L40000_p0_r0_ukR40000/2025_04
+2025,5,25,20.121,26.217,4.778,17.206,23.373,0.610,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare_eps5_L40000_p0_r0_ukR40000/2025_05
+2025,6,24,14.536,19.049,1.927,12.225,15.289,0.480,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare_eps5_L40000_p0_r0_ukR40000/2025_06
+2025,7,25,27.870,34.426,9.607,21.796,31.437,-0.598,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare_eps5_L40000_p0_r0_ukR40000/2025_07
+2025,8,25,20.442,24.930,4.892,29.666,35.056,-0.639,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare_eps5_L40000_p0_r0_ukR40000/2025_08
+2025,9,25,11.883,15.458,1.473,12.980,15.530,-0.207,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare_eps5_L40000_p0_r0_ukR40000/2025_09
+2025,10,25,10.934,14.111,-0.158,11.737,15.069,-0.414,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare_eps5_L40000_p0_r0_ukR40000/2025_10
+2025,11,25,9.151,13.087,0.369,13.405,17.557,0.068,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare_eps5_L40000_p0_r0_ukR40000/2025_11
+2025,12,25,8.537,10.821,1.165,7.308,9.251,0.214,/home/denissbokadenissboka/projects/gridpp_lab/gridpp_precip/out_2025_html_compare_eps5_L40000_p0_r0_ukR40000/2025_12

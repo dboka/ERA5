@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -15,6 +15,9 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize, LinearSegmentedColormap
 from matplotlib.ticker import FuncFormatter
 import matplotlib.patheffects as pe
+
+# Logo helper
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 # Optional borders + clipping
 try:
@@ -30,7 +33,7 @@ except Exception:
 
 
 def parse_args():
-    p = argparse.ArgumentParser("Make LVGMC-style production map (R-like geom_raster via pcolormesh)")
+    p = argparse.ArgumentParser("Make LVGMC-style production map (nice scale + 5mm quantization)")
 
     p.add_argument("--analysis_tif", required=True, help="02_analysis.tif (EPSG:3059 recommended)")
     p.add_argument("--grid_csv", required=True, help="1x1 grid centers CSV with x/y columns (LKS92).")
@@ -47,16 +50,13 @@ def parse_args():
 
     # vectors
     p.add_argument("--lv_border", default=None, help="Latvia border vector (gpkg/shp). Optional but recommended.")
+    p.add_argument("--robeza_shp", default=None, help="Border shapefile. If set, used as lv_border.")
     p.add_argument("--lv_muni", default=None, help="Latvia municipalities/admin borders (gpkg/shp). Optional.")
     p.add_argument("--neighbors", default=None, help="Neighbor countries vector (gpkg/shp). Optional.")
+    
 
     # clip raster to LV border polygon (makes coastline crisp)
     p.add_argument("--clip_to_lv", action="store_true", help="Clip raster to lv_border polygon")
-
-    # logo
-    p.add_argument("--logo_png", default=None, help="LVGMC logo PNG (transparent recommended). Optional.")
-    p.add_argument("--logo_xy", default="0.03,0.94", help="Logo anchor in axes fraction (x,y). default 0.03,0.94")
-    p.add_argument("--logo_zoom", type=float, default=0.22, help="Logo scale factor (rough).")
 
     # Stations CSV columns
     p.add_argument("--csv_sep", default=";", help="Stations CSV separator (default ;)")
@@ -64,9 +64,20 @@ def parse_args():
     p.add_argument("--station_value_col", default="month_sum", help="Value column (default month_sum)")
     p.add_argument("--station_lon_col", default="lon")
     p.add_argument("--station_lat_col", default="lat")
-    p.add_argument("--station_name_col", default=None, help="Optional name column. If missing -> auto-detect, else gh_id.")
-    p.add_argument("--station_id_col", default="gh_id", help="Fallback label id column (default gh_id)")
+    p.add_argument("--station_name_col", default=None, help="Optional name column in monthly CSV. If missing -> use meta file, else gh_id.")
+    p.add_argument("--station_id_col", default="gh_id", help="Station id column (default gh_id)")
     p.add_argument("--stations_crs", default="EPSG:4326", help="CRS of station lon/lat (default EPSG:4326)")
+
+    # Station meta (your staciju_dati_norma3.csv)
+    p.add_argument(
+        "--stations_meta_csv",
+        default="/home/denissbokadenissboka/projects/gridpp_lab/staciju_dati_norma3.csv",
+        help="Stations meta CSV containing station id -> station name mapping.",
+    )
+    p.add_argument("--meta_sep", default=";", help="Meta CSV separator (default ;)")
+    p.add_argument("--meta_decimal", default=".", help="Meta CSV decimal mark (default .)")
+    p.add_argument("--meta_id_col", default=None, help="Meta CSV id column (optional; auto-detect if None).")
+    p.add_argument("--meta_name_col", default=None, help="Meta CSV name column (optional; auto-detect if None).")
 
     # styling
     p.add_argument("--lang", default="LV", choices=["LV", "EN"])
@@ -76,20 +87,30 @@ def parse_args():
     p.add_argument("--border_col", default="#48525B")
     p.add_argument("--muni_col", default="#7C8893")
 
-    p.add_argument("--vmin", type=float, default=None)
-    p.add_argument("--vmax", type=float, default=None)
-    p.add_argument("--cmap", default="lvgmc_precip", help="lvgmc_precip OR any matplotlib cmap name")
+    # display-only smoothing (optional)
+    p.add_argument("--smooth_sigma", type=float, default=0.0, help="Display-only NaN-safe smoothing sigma (0=off)")
 
-    # display smoothing (display-only)
-    p.add_argument("--smooth_sigma", type=float, default=0.0, help="Display-only Gaussian smoothing sigma in grid cells (0=off)")
-
+    # labels
     p.add_argument("--label_stations", action="store_true")
     p.add_argument("--max_labels", type=int, default=60)
-    p.add_argument("--label_top_n", type=int, default=9999, help="Label only top-N by value (default all)")
-    p.add_argument("--label_dx_frac", type=float, default=0.008, help="Label x offset as fraction of map width")
-    p.add_argument("--label_dy_frac", type=float, default=0.008, help="Label y offset as fraction of map height")
+    p.add_argument("--label_top_n", type=int, default=9999)
+    p.add_argument("--label_dx_frac", type=float, default=0.008)
+    p.add_argument("--label_dy_frac", type=float, default=0.008)
 
-    p.add_argument("--cb_ticks", default=None, help='Colorbar ticks, e.g. "40,90,140,190"')
+    # requested behavior
+    p.add_argument("--quant_step", type=float, default=5.0, help="Quantization step in mm (default 5mm)")
+    p.add_argument("--tick_step", type=float, default=25.0, help="Colorbar ticks step in mm (default 25mm)")
+    p.add_argument("--vmax_round", type=float, default=25.0, help="Round vmax up to nearest N (default 25mm)")
+
+    # logo
+    p.add_argument(
+        "--logo_png",
+        default="/home/denissbokadenissboka/projects/gridpp_lab/images/LVGMC_1300-AM.png",
+        help="Logo PNG path to draw at very left corner (figure).",
+    )
+    p.add_argument("--logo_zoom", type=float, default=0.12, help="Logo zoom (default 0.12).")
+    p.add_argument("--logo_pad", type=float, default=0.01, help="Padding from figure corner (0-0.05 typical).")
+
     p.add_argument("--dpi", type=int, default=300)
     return p.parse_args()
 
@@ -117,20 +138,13 @@ def lvgmc_precip_cmap() -> LinearSegmentedColormap:
     return LinearSegmentedColormap.from_list("lvgmc_precip", colors, N=256)
 
 
-def comma_formatter(lang: str, ndp: int = 1):
+def comma_formatter(lang: str, ndp: int = 0):
     def _fmt(x, _pos=None):
         s = f"{x:.{ndp}f}"
         if lang == "LV":
             s = s.replace(".", ",")
         return s
     return FuncFormatter(_fmt)
-
-
-def parse_ticks(s: Optional[str]) -> Optional[List[float]]:
-    if not s:
-        return None
-    parts = [p.strip() for p in s.split(",") if p.strip()]
-    return [float(p) for p in parts]
 
 
 def transform_points_to_crs(xs: np.ndarray, ys: np.ndarray, src_crs: str, dst_crs) -> Tuple[np.ndarray, np.ndarray]:
@@ -206,7 +220,7 @@ def edges_from_centers_midpoint(v: np.ndarray) -> np.ndarray:
 
 
 def sample_tif_at_centers_vectorized(tif_path: str, xs: np.ndarray, ys: np.ndarray, grid_crs: str) -> Tuple[np.ndarray, object]:
-    """Fast sampling: compute raster indices for all centers using inverse affine transform."""
+    """Fast sampling: compute raster indices for all centers using inverse affine transform (nearest)."""
     xs = np.sort(xs.astype(float))
     ys = np.sort(ys.astype(float))
 
@@ -262,30 +276,180 @@ def clip_grid_to_polygon(Z: np.ndarray, x_edges: np.ndarray, y_edges: np.ndarray
 
 
 def _pick_station_name_column(df: pd.DataFrame, explicit: Optional[str], fallback_id_col: str) -> str:
-    """Choose station label column: explicit -> autodetect -> fallback_id_col."""
     if explicit and explicit in df.columns:
         return explicit
-
-    # common name columns (LV + EN + variants)
-    candidates = [
-        "Nosaukums", "nosaukums",
-        "Stacija", "stacija",
-        "Station", "station",
-        "Name", "name",
-        "STATION", "NAME",
-    ]
-    for c in candidates:
+    for c in ["Nosaukums", "nosaukums", "Stacija", "stacija", "Station", "station", "Name", "name", "STATION", "NAME"]:
         if c in df.columns:
             return c
-
     return fallback_id_col
+
+
+def _ceil_to(x: float, step: float) -> float:
+    if not np.isfinite(x):
+        return step
+    if step <= 0:
+        return float(x)
+    return float(np.ceil(x / step) * step)
+
+
+def _quantize_mm(Z: np.ndarray, step: float) -> np.ndarray:
+    """Quantize values to nearest step (mm)."""
+    if step <= 0:
+        return Z
+    Z = Z.astype(np.float32, copy=False)
+    out = Z.copy()
+    m = np.isfinite(out)
+    out[m] = np.round(out[m] / step) * step
+    out[m] = np.maximum(out[m], 0.0)
+    return out.astype(np.float32)
+
+
+def _autodetect_meta_cols(meta: pd.DataFrame, id_hint: Optional[str], name_hint: Optional[str]) -> Tuple[str, str]:
+    """
+    Try to find (id_col, name_col) in your staciju_dati_norma3.csv robustly.
+    """
+    cols = list(meta.columns)
+
+    def norm(s: str) -> str:
+        return str(s).strip().lower()
+
+    ncols = {norm(c): c for c in cols}
+
+    # explicit hints
+    if id_hint and id_hint in cols and name_hint and name_hint in cols:
+        return id_hint, name_hint
+    if id_hint and id_hint in cols and name_hint is None:
+        # pick name later
+        pass
+    if name_hint and name_hint in cols and id_hint is None:
+        # pick id later
+        pass
+
+    # likely id columns
+    id_candidates = []
+    for key in ["gh_id", "ghid", "id", "station_id", "st_id", "kods", "code"]:
+        if key in ncols:
+            id_candidates.append(ncols[key])
+    # also any column containing "gh" and "id"
+    for c in cols:
+        lc = norm(c)
+        if "gh" in lc and "id" in lc and c not in id_candidates:
+            id_candidates.append(c)
+
+    # likely name columns
+    name_candidates = []
+    for key in ["nosaukums", "stacija", "station", "name", "nosauk"]:
+        if key in ncols:
+            name_candidates.append(ncols[key])
+    for c in cols:
+        lc = norm(c)
+        if ("nosauk" in lc or "stacij" in lc or "station" in lc or lc == "name") and c not in name_candidates:
+            name_candidates.append(c)
+
+    # apply explicit hint preference
+    if id_hint and id_hint in cols:
+        id_col = id_hint
+    else:
+        id_col = id_candidates[0] if id_candidates else cols[0]  # fallback
+
+    if name_hint and name_hint in cols:
+        name_col = name_hint
+    else:
+        # avoid choosing same as id
+        name_col = None
+        for c in name_candidates:
+            if c != id_col:
+                name_col = c
+                break
+        if name_col is None:
+            # fallback: first different column
+            for c in cols:
+                if c != id_col:
+                    name_col = c
+                    break
+        if name_col is None:
+            name_col = id_col
+
+    return id_col, name_col
+
+
+def _apply_station_names_from_meta(
+    sub: pd.DataFrame,
+    station_id_col: str,
+    stations_meta_csv: str,
+    meta_sep: str,
+    meta_decimal: str,
+    meta_id_col: Optional[str],
+    meta_name_col: Optional[str],
+) -> pd.DataFrame:
+    """
+    Adds/overwrites 'station_name' column in sub using mapping from stations_meta_csv.
+    Keeps fallback to id if mapping missing.
+    """
+    sub = sub.copy()
+    sub["station_name"] = sub[station_id_col].astype(str)
+
+    if not stations_meta_csv:
+        return sub
+    if not os.path.exists(stations_meta_csv):
+        print(f"[warn] stations_meta_csv not found: {stations_meta_csv} (will use ids as names)")
+        return sub
+
+    meta = pd.read_csv(stations_meta_csv, sep=meta_sep, decimal=meta_decimal, encoding="utf-8", low_memory=False)
+    meta.columns = [c.strip().replace("\ufeff", "") for c in meta.columns]
+
+    id_col, name_col = _autodetect_meta_cols(meta, meta_id_col, meta_name_col)
+
+    # mapping
+    m = meta.dropna(subset=[id_col]).copy()
+    m[id_col] = m[id_col].astype(str)
+    if name_col in m.columns:
+        m[name_col] = m[name_col].astype(str)
+    else:
+        m[name_col] = m[id_col].astype(str)
+
+    mapping = dict(zip(m[id_col].values, m[name_col].values))
+
+    sub["station_name"] = sub[station_id_col].astype(str).map(mapping).fillna(sub[station_id_col].astype(str))
+    return sub
+
+
+def _draw_logo(fig: plt.Figure, logo_path: str, zoom: float = 0.12, pad: float = 0.01):
+    """
+    Draw logo at top-left corner of the *figure* (very left corner).
+    """
+    if not logo_path:
+        return
+    if not os.path.exists(logo_path):
+        print(f"[warn] logo not found: {logo_path}")
+        return
+
+    try:
+        img = plt.imread(logo_path)
+        oi = OffsetImage(img, zoom=zoom)
+        # Figure coordinates: (0,0)=bottom-left, (1,1)=top-right
+        ab = AnnotationBbox(
+            oi,
+            (pad, 1.0 - pad),
+            xycoords="figure fraction",
+            frameon=False,
+            box_alignment=(0, 1),  # align left/top
+            zorder=200,
+        )
+        fig.add_artist(ab)
+    except Exception as e:
+        print(f"[warn] failed to draw logo: {e}")
 
 
 def main():
     a = parse_args()
     os.makedirs(os.path.dirname(a.out_png) or ".", exist_ok=True)
 
-    cmap = lvgmc_precip_cmap() if a.cmap == "lvgmc_precip" else plt.get_cmap(a.cmap)
+    # If user provided --robeza_shp, use it as lv_border
+    if getattr(a, "robeza_shp", None):
+        a.lv_border = a.robeza_shp
+
+    cmap = lvgmc_precip_cmap()
 
     # --- load grid centers ---
     g = pd.read_csv(a.grid_csv, sep=a.grid_sep, decimal=a.grid_decimal, low_memory=False)
@@ -301,15 +465,12 @@ def main():
     # --- sample tif at centers ---
     Z, r_crs = sample_tif_at_centers_vectorized(a.analysis_tif, xs, ys, a.grid_crs)
 
-    # --- optional display smoothing ---
+    # optional smoothing (display-only)
     Zp = gaussian_smooth_nan(Z, a.smooth_sigma) if (a.smooth_sigma and a.smooth_sigma > 0) else Z
-    if not np.isfinite(Zp).any():
-        raise RuntimeError("No finite values after sampling. Check CRS/extents.")
 
-    # edges from centers
+    # optional clip to LV border (crisp coastline)
     x_edges = edges_from_centers_midpoint(xs)
     y_edges = edges_from_centers_midpoint(ys)
-
     west, east = float(x_edges[0]), float(x_edges[-1])
     south, north = float(y_edges[0]), float(y_edges[-1])
 
@@ -322,24 +483,21 @@ def main():
             nbr = gpd.read_file(a.neighbors)
             if r_crs is not None:
                 nbr = nbr.to_crs(r_crs)
-
         if a.lv_muni:
             lv_muni = gpd.read_file(a.lv_muni)
             if r_crs is not None:
                 lv_muni = lv_muni.to_crs(r_crs)
-
         if a.lv_border:
             lv_border = gpd.read_file(a.lv_border)
             if r_crs is not None:
                 lv_border = lv_border.to_crs(r_crs)
 
-    # --- optional crisp clip ---
     if a.clip_to_lv:
         if lv_border is None:
-            raise RuntimeError("--clip_to_lv requires --lv_border")
+            raise RuntimeError("--clip_to_lv requires --lv_border/--robeza_shp")
         Zp = clip_grid_to_polygon(Zp, x_edges, y_edges, lv_border)
 
-    # --- stations ---
+    # --- stations (monthly) ---
     df = pd.read_csv(a.stations_csv, sep=a.csv_sep, decimal=a.csv_decimal, encoding="utf-8", low_memory=False)
     df.columns = [c.strip().replace("\ufeff", "") for c in df.columns]
 
@@ -353,6 +511,7 @@ def main():
     if len(sub) == 0:
         raise RuntimeError(f"No station rows for {a.year}-{a.month:02d}")
 
+    # CRS transform coords
     sx = sub[a.station_lon_col].to_numpy(dtype=float)
     sy = sub[a.station_lat_col].to_numpy(dtype=float)
     sx, sy = transform_points_to_crs(sx, sy, a.stations_crs, r_crs)
@@ -364,32 +523,53 @@ def main():
     if len(sub) == 0:
         raise RuntimeError("No stations inside map bounds after CRS transform.")
 
-    name_col = _pick_station_name_column(sub, a.station_name_col, a.station_id_col)
+    # ---- station names: prefer monthly CSV name col if present; otherwise use meta mapping ----
+    picked = _pick_station_name_column(sub, a.station_name_col, a.station_id_col)
+    if picked == a.station_id_col:
+        # no name in monthly -> use your staciju_dati_norma3.csv
+        sub = _apply_station_names_from_meta(
+            sub=sub,
+            station_id_col=a.station_id_col,
+            stations_meta_csv=a.stations_meta_csv,
+            meta_sep=a.meta_sep,
+            meta_decimal=a.meta_decimal,
+            meta_id_col=a.meta_id_col,
+            meta_name_col=a.meta_name_col,
+        )
+        name_col = "station_name"
+    else:
+        name_col = picked
+
     names = sub[name_col].astype(str).tolist()
     vals = sub[a.station_value_col].to_numpy(dtype=float)
 
-    # --- vmin/vmax AFTER stations are known ---
-    # If user passes --vmin/--vmax, respect them. Otherwise scale to 0 .. (max station + 10)
-    if a.vmin is None:
-        vmin = 0.0
-    else:
-        vmin = float(a.vmin)
+    # ---- requested scaling ----
+    Zq = _quantize_mm(Zp, float(a.quant_step))
 
-    if a.vmax is None:
-        vmax = float(np.nanmax(vals)) + 10.0
-    else:
-        vmax = float(a.vmax)
+    vmin = 0.0
+    max_field = float(np.nanmax(Zq)) if np.isfinite(np.nanmax(Zq)) else 0.0
+    max_st = float(np.nanmax(vals)) if np.isfinite(np.nanmax(vals)) else 0.0
+    vmax_raw = max(max_field, max_st, 0.0)
 
-    if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
-        vmin, vmax = 0.0, 1.0
+    vmax = _ceil_to(vmax_raw, float(a.vmax_round))
+    if vmax <= 0:
+        vmax = float(a.vmax_round)
 
     norm = Normalize(vmin=vmin, vmax=vmax, clip=True)
+
+    tick_step = float(a.tick_step)
+    ticks = np.arange(0.0, vmax + 0.5 * tick_step, tick_step, dtype=float)
+    if ticks.size == 0 or ticks[-1] != vmax:
+        if ticks.size == 0:
+            ticks = np.array([0.0, vmax], dtype=float)
+        else:
+            ticks[-1] = vmax
 
     # --- FIGURE ---
     fig = plt.figure(figsize=(10.8, 6.2), dpi=a.dpi)
     fig.patch.set_facecolor(a.bg_color)
 
-    ax = fig.add_axes([0.02, 0.16, 0.96, 0.80])
+    ax = fig.add_axes([0.00, 0.16, 0.96, 0.80])
     ax.set_facecolor(a.bg_color)
     ax.set_axis_off()
 
@@ -404,8 +584,8 @@ def main():
         except Exception:
             nbr.boundary.plot(ax=ax, color=a.neighbors_edge, linewidth=0.7, zorder=0)
 
-    # raster
-    Zm = np.ma.masked_invalid(Zp)
+    # raster (quantized)
+    Zm = np.ma.masked_invalid(Zq)
     pm = ax.pcolormesh(
         x_edges,
         y_edges,
@@ -430,20 +610,17 @@ def main():
     ax.scatter(sx, sy, s=42, c="white", edgecolors="white", linewidths=0.0, zorder=5)
     ax.scatter(sx, sy, s=18, c="black", edgecolors="black", linewidths=0.3, zorder=6)
 
-    # labels: NAME + month_sum (compact)
+    # labels: NAME + value (0 decimals)
     if a.label_stations:
         order = np.argsort(vals)[::-1]
         order = order[: min(len(order), a.label_top_n, a.max_labels)]
 
-        # smaller offsets
         dx = (east - west) * (a.label_dx_frac * 0.55)
         dy = (north - south) * (a.label_dy_frac * 0.55)
 
         for i in order:
             name = str(names[i])
-
             v = float(vals[i])
-            # compact value text: 0 decimals (change to .1f if you want)
             vtxt = f"{v:.0f}"
             if a.lang == "LV":
                 vtxt = vtxt.replace(".", ",")
@@ -454,34 +631,14 @@ def main():
                 float(sx[i]) + dx,
                 float(sy[i]) + dy,
                 txt,
-                fontsize=7.5,          # smaller
-                linespacing=0.9,       # tighter line spacing
+                fontsize=7.5,
+                linespacing=0.9,
                 ha="left",
                 va="bottom",
                 color="black",
                 zorder=10,
             )
-            # thinner halo
             t.set_path_effects([pe.withStroke(linewidth=2.0, foreground="white", alpha=0.9)])
-
-
-    # logo
-    if a.logo_png:
-        import matplotlib.image as mpimg
-        from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-
-        lx, ly = [float(x) for x in a.logo_xy.split(",")]
-        img = mpimg.imread(a.logo_png)
-        oi = OffsetImage(img, zoom=a.logo_zoom)
-        ab = AnnotationBbox(
-            oi,
-            (lx, ly),
-            xycoords=ax.transAxes,
-            frameon=False,
-            box_alignment=(0, 1),
-            zorder=30,
-        )
-        ax.add_artist(ab)
 
     # title
     if a.lang == "LV":
@@ -493,26 +650,32 @@ def main():
         line1 = f"{month_name} {a.year}"
         line2 = "Precipitation, mm"
 
-    ax.text(0.12, 0.08, line1, transform=ax.transAxes, fontsize=22, color="black",
+    ax.text(0.03, 0.08, line1, transform=ax.transAxes, fontsize=22, color="black",
             ha="left", va="bottom", zorder=40)
-    ax.text(0.12, 0.01, line2, transform=ax.transAxes, fontsize=22, fontweight="bold",
+    ax.text(0.03, 0.01, line2, transform=ax.transAxes, fontsize=22, fontweight="bold",
             color="black", ha="left", va="bottom", zorder=40)
 
-    # colorbar bottom
-    cax = fig.add_axes([0.10, 0.07, 0.84, 0.028])
-    ticks = parse_ticks(a.cb_ticks)
-    if ticks is None:
-        ticks = [vmin, vmin + (vmax - vmin) * 0.33, vmin + (vmax - vmin) * 0.66, vmax]
-
+    # colorbar bottom (nice ticks)
+    cax = fig.add_axes([0.03, 0.07, 0.84, 0.028])
     cb = fig.colorbar(pm, cax=cax, orientation="horizontal", ticks=ticks)
     cb.outline.set_linewidth(0.6)
     cb.ax.tick_params(labelsize=14, length=0)
-    cb.ax.xaxis.set_major_formatter(comma_formatter(a.lang, ndp=1))
+    cb.ax.xaxis.set_major_formatter(comma_formatter(a.lang, ndp=0))
     cb.set_label("")
+
+    # logo at very left corner (figure top-left)
+    _draw_logo(fig, a.logo_png, zoom=float(a.logo_zoom), pad=float(a.logo_pad))
 
     plt.savefig(a.out_png, dpi=a.dpi, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
-    print("Wrote:", a.out_png)
+
+    print(f"Wrote: {a.out_png}")
+    print(f"[scale] vmin={vmin:.0f} vmax_raw={vmax_raw:.1f} -> vmax={vmax:.0f} (rounded by {a.vmax_round})")
+    print(f"[quant] step={a.quant_step}mm | [ticks] step={a.tick_step}mm")
+    if name_col == "station_name":
+        print(f"[names] used meta mapping from: {a.stations_meta_csv}")
+    else:
+        print(f"[names] used column in stations_csv: {name_col}")
 
 
 if __name__ == "__main__":
